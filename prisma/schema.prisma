@@ -1,0 +1,1282 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  MANAGER
+  MARKETER
+  CLIENT
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum LeadSource {
+  CONTACT_FORM
+  QUOTE_FORM
+  DEMO_FORM
+  CHATBOT
+  REFERRAL
+  ORGANIC
+  PAID
+  SOCIAL
+  DIRECT
+  OTHER
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  BLOCKED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  MENTION
+  TASK_ASSIGNED
+  PROJECT_UPDATE
+  LEAD_UPDATE
+  COMMENT
+  SYSTEM
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+  OTHER
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+  DRAFT
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  REMOTE
+}
+
+enum ApplicationStatus {
+  RECEIVED
+  REVIEWING
+  SHORTLISTED
+  INTERVIEW
+  OFFERED
+  HIRED
+  REJECTED
+}
+
+enum CampaignType {
+  POPUP
+  BANNER
+  EMAIL
+  NOTIFICATION
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+// ==================== USER & AUTH ====================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String
+  name              String
+  avatar            String?
+  phone             String?
+  jobTitle          String?
+  department        String?
+  bio               String?
+  role              UserRole  @default(CLIENT)
+  isActive          Boolean   @default(true)
+  isEmailVerified   Boolean   @default(false)
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
+  passwordChangedAt DateTime?
+  preferences       Json?     @default("{}")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  sessions          Session[]
+  activityLogs      ActivityLog[]
+  pages             Page[]            @relation("PageAuthor")
+  blogPosts         BlogPost[]        @relation("BlogPostAuthor")
+  comments          Comment[]
+  notifications     Notification[]
+  assignedTasks     Task[]            @relation("TaskAssignee")
+  createdTasks      Task[]            @relation("TaskCreator")
+  projectMembers    ProjectMember[]
+  leadNotes         LeadNote[]
+  leadAssignments   Lead[]            @relation("LeadAssignee")
+  auditLogs         AuditLog[]
+  mediaUploads      Media[]
+  pageVersions      PageVersion[]
+  caseStudies       CaseStudy[]       @relation("CaseStudyAuthor")
+  createdCampaigns  Campaign[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model Session {
+  id          String   @id @default(uuid())
+  userId      String
+  token       String   @unique
+  ipAddress   String?
+  userAgent   String?
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("sessions")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  displayName String
+  description String?
+  permissions Json     @default("[]")
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+// ==================== CMS - PAGES & BLOCKS ====================
+
+model Page {
+  id              String        @id @default(uuid())
+  slug            String        @unique
+  title           String
+  description     String?
+  status          ContentStatus @default(DRAFT)
+  template        String        @default("default")
+  authorId        String?
+  parentId        String?
+  order           Int           @default(0)
+  metaTitle       String?
+  metaDescription String?
+  metaKeywords    String?
+  ogTitle         String?
+  ogDescription   String?
+  ogImage         String?
+  twitterCard     String?
+  canonicalUrl    String?
+  structuredData  Json?
+  bannerImage     String?
+  publishedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  author   User?         @relation("PageAuthor", fields: [authorId], references: [id])
+  parent   Page?         @relation("PageChildren", fields: [parentId], references: [id])
+  children Page[]        @relation("PageChildren")
+  blocks   PageBlock[]
+  versions PageVersion[]
+
+  @@index([slug])
+  @@index([status])
+  @@map("pages")
+}
+
+model PageBlock {
+  id        String   @id @default(uuid())
+  pageId    String
+  type      String
+  content   Json     @default("{}")
+  order     Int      @default(0)
+  settings  Json?    @default("{}")
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+  @@map("page_blocks")
+}
+
+model PageVersion {
+  id        String   @id @default(uuid())
+  pageId    String
+  userId    String?
+  title     String
+  blocks    Json     @default("[]")
+  metadata  Json?
+  version   Int
+  createdAt DateTime @default(now())
+
+  page Page  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([pageId])
+  @@map("page_versions")
+}
+
+model ContentSnippet {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  title     String
+  content   Json     @default("{}")
+  type      String   @default("text")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("content_snippets")
+}
+
+// ==================== MEDIA LIBRARY ====================
+
+model Media {
+  id           String    @id @default(uuid())
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+  thumbnailUrl String?
+  altText      String?
+  caption      String?
+  type         MediaType @default(IMAGE)
+  width        Int?
+  height       Int?
+  tags         String[]  @default([])
+  uploadedById String?
+  folderId     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  uploadedBy User?        @relation(fields: [uploadedById], references: [id])
+  folder     MediaFolder? @relation(fields: [folderId], references: [id])
+
+  @@index([type])
+  @@index([uploadedById])
+  @@map("media")
+}
+
+model MediaFolder {
+  id        String   @id @default(uuid())
+  name      String
+  parentId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   MediaFolder?  @relation("FolderChildren", fields: [parentId], references: [id])
+  children MediaFolder[] @relation("FolderChildren")
+  media    Media[]
+
+  @@map("media_folders")
+}
+
+// ==================== SERVICES ====================
+
+model Service {
+  id              String        @id @default(uuid())
+  name            String
+  slug            String        @unique
+  description     String
+  longDescription String?
+  icon            String?
+  image           String?
+  tags            String[]      @default([])
+  highlights      String[]      @default([])
+  technologies    String[]      @default([])
+  benefits        String[]      @default([])
+  useCases        String[]      @default([])
+  order           Int           @default(0)
+  status          ContentStatus @default(DRAFT)
+  metaTitle       String?
+  metaDescription String?
+  faqItems        Json?         @default("[]")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  caseStudies CaseStudy[] @relation("CaseStudyService")
+  projects    Project[]
+
+  @@index([slug])
+  @@map("services")
+}
+
+// ==================== PRODUCTS ====================
+
+model Product {
+  id              String        @id @default(uuid())
+  name            String
+  slug            String        @unique
+  description     String
+  longDescription String?
+  image           String?
+  icon            String?
+  categoryBadge   String?       @map("category_badge")
+  features        String[]      @default([])
+  technologies    String[]      @default([])
+  order           Int           @default(0)
+  status          ContentStatus @default(DRAFT)
+  metaTitle       String?
+  metaDescription String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([slug])
+  @@map("products")
+}
+
+// ==================== BLOG ====================
+
+model BlogPost {
+  id              String        @id @default(uuid())
+  title           String
+  slug            String        @unique
+  excerpt         String
+  content         String
+  featuredImage   String?
+  authorId        String?
+  readTime        Int?
+  viewCount       Int           @default(0)
+  status          ContentStatus @default(DRAFT)
+  metaTitle       String?
+  metaDescription String?
+  ogImage         String?
+  publishedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  author     User?               @relation("BlogPostAuthor", fields: [authorId], references: [id])
+  categories BlogPostCategory[]
+  tags       BlogPostTag[]
+  comments   Comment[]
+
+  @@index([slug])
+  @@index([status])
+  @@map("blog_posts")
+}
+
+model BlogCategory {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  image       String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts BlogPostCategory[]
+
+  @@map("blog_categories")
+}
+
+model BlogTag {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts BlogPostTag[]
+
+  @@map("blog_tags")
+}
+
+model BlogPostCategory {
+  postId     String
+  categoryId String
+
+  post     BlogPost     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  category BlogCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([postId, categoryId])
+  @@map("blog_post_categories")
+}
+
+model BlogPostTag {
+  postId String
+  tagId  String
+
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  BlogTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@map("blog_post_tags")
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  content    String
+  authorName String?
+  authorEmail String?
+  userId     String?
+  postId     String
+  parentId   String?
+  isApproved Boolean  @default(false)
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user     User?     @relation(fields: [userId], references: [id])
+  post     BlogPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+
+  @@index([postId])
+  @@map("comments")
+}
+
+// ==================== CASE STUDIES / PORTFOLIO ====================
+
+model CaseStudy {
+  id              String        @id @default(uuid())
+  title           String
+  slug            String        @unique
+  clientName      String
+  clientLogo      String?
+  industry        String?
+  challenge       String
+  solution        String
+  results         String
+  metrics         Json?         @default("[]")
+  technologies    String[]      @default([])
+  gallery         String[]      @default([])
+  testimonial     String?
+  testimonialAuthor String?
+  testimonialRole String?
+  pdfUrl                  String?
+  featuredImage           String?
+  implementationPhases    Json?         @default("[]")
+  roiPercentage           Int?
+  serviceId               String?
+  authorId                String?
+  order                   Int           @default(0)
+  status                  ContentStatus @default(DRAFT)
+  metaTitle               String?
+  metaDescription         String?
+  publishedAt             DateTime?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  service Service? @relation("CaseStudyService", fields: [serviceId], references: [id])
+  author  User?    @relation("CaseStudyAuthor", fields: [authorId], references: [id])
+
+  @@index([slug])
+  @@index([status])
+  @@map("case_studies")
+}
+
+// ==================== TEAM ====================
+
+model TeamMember {
+  id          String        @id @default(uuid())
+  name        String
+  position    String
+  department  String?
+  bio         String
+  image       String?
+  email       String?
+  phone       String?
+  linkedIn    String?
+  twitter     String?
+  github      String?
+  order       Int           @default(0)
+  isLeadership Boolean      @default(false)
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("team_members")
+}
+
+// ==================== CLIENTS ====================
+
+model Client {
+  id          String        @id @default(uuid())
+  name        String
+  logo        String?
+  website     String?
+  description String?
+  industry    String?
+  iconType    String?       @map("icon_type")
+  isFeatured  Boolean       @default(false)
+  order       Int           @default(0)
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  projects Project[]
+  leads    Lead[]
+  contacts ClientContact[]
+
+  @@map("clients")
+}
+
+model ClientContact {
+  id        String   @id @default(uuid())
+  clientId  String
+  name      String
+  email     String?
+  phone     String?
+  position  String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("client_contacts")
+}
+
+// ==================== CERTIFICATIONS ====================
+
+model Certification {
+  id                String        @id @default(uuid())
+  name              String
+  slug              String        @unique
+  image             String?
+  smallDescription  String?
+  description       String?
+  certificateNumber String?
+  issuedDate        DateTime?
+  expiryDate        DateTime?
+  isFeatured        Boolean       @default(false)
+  order             Int           @default(0)
+  status            ContentStatus @default(DRAFT)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("certifications")
+}
+
+// ==================== PROJECTS ====================
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  slug        String        @unique
+  description String?
+  clientId    String?
+  serviceId   String?
+  budget      Decimal?
+  startDate   DateTime?
+  endDate     DateTime?
+  status      ProjectStatus @default(PLANNING)
+  progress    Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  client     Client?         @relation(fields: [clientId], references: [id])
+  service    Service?        @relation(fields: [serviceId], references: [id])
+  members    ProjectMember[]
+  tasks      Task[]
+  milestones Milestone[]
+  deliverables Deliverable[]
+
+  @@index([clientId])
+  @@index([status])
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String   @default("member")
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+model Milestone {
+  id          String          @id @default(uuid())
+  projectId   String
+  title       String
+  description String?
+  dueDate     DateTime?
+  status      MilestoneStatus @default(PENDING)
+  order       Int             @default(0)
+  signedOff   Boolean         @default(false)
+  signedOffAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("milestones")
+}
+
+model Task {
+  id          String       @id @default(uuid())
+  projectId   String
+  title       String
+  description String?
+  assigneeId  String?
+  creatorId   String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  creator  User?   @relation("TaskCreator", fields: [creatorId], references: [id])
+
+  @@index([projectId])
+  @@index([assigneeId])
+  @@map("tasks")
+}
+
+model Deliverable {
+  id          String   @id @default(uuid())
+  projectId   String
+  title       String
+  description String?
+  fileUrl     String?
+  fileName    String?
+  fileSize    Int?
+  version     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("deliverables")
+}
+
+// ==================== CRM / LEADS ====================
+
+model Lead {
+  id          String     @id @default(uuid())
+  name        String
+  email       String
+  phone       String?
+  company     String?
+  message     String?
+  source      LeadSource @default(CONTACT_FORM)
+  status      LeadStatus @default(NEW)
+  score       Int        @default(0)
+  assigneeId  String?
+  clientId    String?
+  serviceInterest String?
+  attachmentUrl String?
+  ipAddress   String?
+  userAgent   String?
+  referrerUrl String?
+  gdprConsent Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  assignee User?      @relation("LeadAssignee", fields: [assigneeId], references: [id])
+  client   Client?    @relation(fields: [clientId], references: [id])
+  notes    LeadNote[]
+  events   LeadEvent[]
+
+  @@index([status])
+  @@index([source])
+  @@index([assigneeId])
+  @@map("leads")
+}
+
+model LeadNote {
+  id        String   @id @default(uuid())
+  leadId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([leadId])
+  @@map("lead_notes")
+}
+
+model LeadEvent {
+  id        String   @id @default(uuid())
+  leadId    String
+  type      String
+  data      Json?
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@map("lead_events")
+}
+
+// ==================== CONTACT SUBMISSIONS ====================
+
+model ContactSubmission {
+  id          String   @id @default(uuid())
+  name        String
+  email       String
+  phone       String?
+  company     String?
+  service     String?
+  subject     String?
+  message     String
+  attachmentUrl String?
+  isRead      Boolean  @default(false)
+  isResolved  Boolean  @default(false)
+  adminNotes  String?
+  ipAddress   String?
+  gdprConsent Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("contact_submissions")
+}
+
+// ==================== NEWSLETTER ====================
+
+model NewsletterSubscriber {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  name           String?
+  isActive       Boolean   @default(true)
+  segments       String[]  @default([])
+  gdprConsent    Boolean   @default(false)
+  unsubscribedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("newsletter_subscribers")
+}
+
+model NewsletterCampaign {
+  id          String   @id @default(uuid())
+  subject     String
+  content     String
+  segments    String[] @default([])
+  sentCount   Int      @default(0)
+  openCount   Int      @default(0)
+  clickCount  Int      @default(0)
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("newsletter_campaigns")
+}
+
+// ==================== CAREERS ====================
+
+model JobListing {
+  id           String    @id @default(uuid())
+  title        String
+  slug         String    @unique
+  department   String
+  location     String
+  type         JobType   @default(FULL_TIME)
+  description  String
+  requirements String
+  benefits     String?
+  salaryRange  String?
+  status       JobStatus @default(DRAFT)
+  publishedAt  DateTime?
+  closingDate  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  applications JobApplication[]
+
+  @@index([status])
+  @@map("job_listings")
+}
+
+model JobApplication {
+  id            String            @id @default(uuid())
+  jobId         String
+  name          String
+  email         String
+  phone         String?
+  coverLetter   String?
+  cvUrl         String?
+  portfolioUrl  String?
+  status        ApplicationStatus @default(RECEIVED)
+  notes         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  job JobListing @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("job_applications")
+}
+
+// ==================== TESTIMONIALS ====================
+
+model Testimonial {
+  id          String        @id @default(uuid())
+  clientName  String
+  company     String?
+  position    String?
+  content     String
+  rating      Int?
+  image       String?
+  videoUrl    String?
+  industry    String?
+  isFeatured  Boolean       @default(false)
+  order       Int           @default(0)
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("testimonials")
+}
+
+// ==================== MARKETING / CAMPAIGNS ====================
+
+model Campaign {
+  id            String         @id @default(uuid())
+  name          String
+  type          CampaignType
+  status        CampaignStatus @default(DRAFT)
+  content       Json           @default("{}")
+  targetRules   Json?          @default("{}")
+  impressions   Int            @default(0)
+  clicks        Int            @default(0)
+  conversions   Int            @default(0)
+  createdById   String?
+  startDate     DateTime?
+  endDate       DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@map("campaigns")
+}
+
+model ABTest {
+  id          String   @id @default(uuid())
+  name        String
+  pageUrl     String
+  variantA    Json
+  variantB    Json
+  trafficSplit Int     @default(50)
+  impressionsA Int     @default(0)
+  impressionsB Int     @default(0)
+  conversionsA Int     @default(0)
+  conversionsB Int     @default(0)
+  isActive    Boolean  @default(false)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("ab_tests")
+}
+
+// ==================== ANALYTICS ====================
+
+model PageView {
+  id          String   @id @default(uuid())
+  pageUrl     String
+  pageTitle   String?
+  sessionId   String?
+  visitorId   String?
+  ipAddress   String?
+  country     String?
+  region      String?
+  city        String?
+  device      String?
+  browser     String?
+  os          String?
+  referrer    String?
+  source      String?
+  duration    Int?
+  createdAt   DateTime @default(now())
+
+  @@index([pageUrl])
+  @@index([createdAt])
+  @@index([visitorId])
+  @@map("page_views")
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  name      String
+  category  String?
+  data      Json?
+  sessionId String?
+  visitorId String?
+  pageUrl   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([name])
+  @@index([createdAt])
+  @@map("analytics_events")
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType @default(INFO)
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean          @default(false)
+  data      Json?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ==================== AUDIT & ACTIVITY LOGS ====================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  oldData    Json?
+  newData    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  details   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// ==================== SETTINGS ====================
+
+model Setting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  type      String   @default("string")
+  group     String   @default("general")
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+  @@index([group])
+  @@map("settings")
+}
+
+// ==================== FAQ ====================
+
+model FaqItem {
+  id        String        @id @default(uuid())
+  question  String
+  answer    String
+  category  String?
+  order     Int           @default(0)
+  status    ContentStatus @default(DRAFT)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@map("faq_items")
+}
+
+// ==================== PARTNERS ====================
+
+model Partner {
+  id          String        @id @default(uuid())
+  name        String
+  logo        String?
+  website     String?
+  description String?
+  type        String?
+  isFeatured  Boolean       @default(false)
+  order       Int           @default(0)
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("partners")
+}
+
+// ==================== CHATBOT ====================
+
+model ChatbotQuestion {
+  id        String   @id @default(uuid())
+  question  String
+  answer    String
+  category  String?
+  keywords  String[] @default([])
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("chatbot_questions")
+}
+
+model ChatSession {
+  id         String        @id @default(uuid())
+  visitorId  String?
+  ipAddress  String?
+  isLive     Boolean       @default(false)
+  assignedTo String?
+  closedAt   DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  messages ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  sessionId String
+  sender    String
+  message   String
+  isBot     Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}
+
+// ==================== SYSTEM ====================
+
+model SystemBackup {
+  id        String   @id @default(uuid())
+  filename  String
+  size      Int?
+  type      String   @default("full")
+  status    String   @default("pending")
+  url       String?
+  createdAt DateTime @default(now())
+
+  @@map("system_backups")
+}
+
+model MaintenanceMode {
+  id        String   @id @default(uuid())
+  isActive  Boolean  @default(false)
+  message   String?
+  startAt   DateTime?
+  endAt     DateTime?
+  updatedAt DateTime @updatedAt
+
+  @@map("maintenance_mode")
+}
+
+// ==================== COOKIE CONSENT ====================
+
+model CookieConsent {
+  id              String   @id @default(uuid())
+  visitorId       String
+  necessary       Boolean  @default(true)
+  analytics       Boolean  @default(false)
+  marketing       Boolean  @default(false)
+  preferences     Boolean  @default(false)
+  ipAddress       String?
+  userAgent       String?
+  consentedAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([visitorId])
+  @@map("cookie_consents")
+}
+
+// ==================== HERO SLIDES ====================
+
+model HeroSlide {
+  id               String   @id @default(uuid())
+  title            String
+  subtitle         String?
+  description      String?
+  backgroundImage  String?
+  backgroundVideo  String?
+  ctaText          String?
+  ctaLink          String?
+  secondaryCtaText String?
+  secondaryCtaLink String?
+  sortOrder        Int      @default(0)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("hero_slides")
+}
+
+// ==================== LEAD SCORING RULES ====================
+
+model LeadScoringRule {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  condition   String
+  score       Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("lead_scoring_rules")
+}
+
+// ==================== RESOURCES / KNOWLEDGE HUB ====================
+
+model Resource {
+  id              String        @id @default(uuid())
+  title           String
+  slug            String        @unique
+  description     String?
+  type            String        @default("whitepaper")
+  fileUrl         String?
+  thumbnailUrl    String?
+  category        String?
+  tags            String[]      @default([])
+  downloadCount   Int           @default(0)
+  isGated         Boolean       @default(false)
+  status          ContentStatus @default(DRAFT)
+  metaTitle       String?
+  metaDescription String?
+  publishedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([slug])
+  @@index([type])
+  @@map("resources")
+}
+
+// ==================== PRESS / NEWSROOM ====================
+
+model PressRelease {
+  id              String        @id @default(uuid())
+  title           String
+  slug            String        @unique
+  content         String
+  excerpt         String?
+  source          String?
+  sourceUrl       String?
+  featuredImage   String?
+  status          ContentStatus @default(DRAFT)
+  publishedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([slug])
+  @@map("press_releases")
+}
+
+// ==================== GALLERY ====================
+
+model GalleryImage {
+  id          String        @id @default(uuid())
+  title       String
+  description String?
+  imageUrl    String
+  category    String?
+  order       Int           @default(0)
+  status      ContentStatus @default(PUBLISHED)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([category])
+  @@index([status])
+  @@map("gallery_images")
+}

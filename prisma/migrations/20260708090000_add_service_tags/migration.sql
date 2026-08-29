@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "services" ADD COLUMN IF NOT EXISTS "tags" TEXT[] DEFAULT ARRAY[]::TEXT[];
